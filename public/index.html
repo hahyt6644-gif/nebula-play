@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <meta name="theme-color" content="#000000">
+  <title>Nebula Player</title>
+  <meta name="description" content="Play your media files fast, free, and secure.">
+  <link rel="stylesheet" href="/style.css">
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <script src="https://sad.adsgram.ai/js/sad.min.js"></script>
+  <script src="https://w.tads.me/widget.js"></script>
+</head>
+<body>
+  <main class="container">
+    <header class="header">
+      <div class="logo-icon">▶</div>
+      <h1 class="title">Nebula Player</h1>
+      <p class="subtitle">Paste a secure media link to watch</p>
+    </header>
+
+    <section class="input-section">
+      <div class="input-wrapper">
+        <input id="link" type="text" class="link-input" placeholder="Paste your video link here..." autocomplete="off">
+        <button id="play" class="btn btn-download" disabled>▶ Play</button>
+      </div>
+    </section>
+
+    <section id="loading" class="status-card loading-card" hidden>
+      <div class="spinner"></div>
+      <div class="status-text" id="loading-text">Loading…</div>
+    </section>
+
+    <section id="error" class="status-card error-card" hidden>
+      <div class="error-icon">⚠️</div>
+      <div class="status-text error-text">Something went wrong</div>
+      <p class="status-sub" id="error-text"></p>
+      <button id="retry" class="btn btn-retry">Try again</button>
+    </section>
+
+    <section class="player-wrap">
+      <video id="player" controls playsinline preload="metadata" hidden></video>
+    </section>
+
+    <section id="features" class="features-grid">
+      <div class="feature-card"><span class="feature-icon">⚡</span><div class="feature-info"><h3 class="feature-title">Ultra Fast Stream</h3><p class="feature-desc">Instantly load videos with high-speed direct decoding servers.</p></div></div>
+      <div class="feature-card"><span class="feature-icon">🛡️</span><div class="feature-info"><h3 class="feature-title">Secure &amp; Private</h3><p class="feature-desc">Your sessions are fully encrypted and protected inside Telegram.</p></div></div>
+      <div class="feature-card"><span class="feature-icon">🎥</span><div class="feature-info"><h3 class="feature-title">Full HD Quality</h3><p class="feature-desc">Stream files in original source resolution.</p></div></div>
+    </section>
+
+    <footer class="footer"><p>Powered by Nebula Engine · Fast &amp; Secure</p></footer>
+    <div id="tads-container-11137" style="display:none"></div>
+  </main>
+  <script src="/app.js"></script>
+</body>
+</html>
