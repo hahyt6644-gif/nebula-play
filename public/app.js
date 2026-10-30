@@ -57,7 +57,7 @@
     return new Promise(function (resolve, reject) {
       if (!window.Adsgram) return reject(new Error("Adsgram SDK not loaded"));
       try {
-        window.Adsgram.init({ blockId: "8" }).show()
+        window.Adsgram.init({ blockId: "56812" }).show()
           .then(function (result) { resolve(result); })
           .catch(function (err) { reject(err || new Error("Adsgram no fill")); });
       } catch (err) { reject(err); }
