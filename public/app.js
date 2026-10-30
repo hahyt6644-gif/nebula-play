@@ -1,15 +1,38 @@
 (function () {
   "use strict";
 
+  /* =====================================================================
+   *  CONFIG  –  edit only this block to customise ads
+   * ===================================================================== */
+  var CONFIG = {
+    // Waterfall order. First entry is tried first; if it fails / no fill,
+    // the next one is tried. Swap the two names to change priority.
+    adOrder: ["tads", "adsgram"],
+
+    // Mid-roll: pause the video and show another ad after this many seconds of playback
+    midRollAfterSeconds: 30,
+
+    adsgramBlockId: "56812",   // Adsgram rewarded unit
+
+    tadsWidgetId: "12977",     // Tads widget ID
+    tadsDebug: false,          // true = test ads only (no revenue)
+    tadsTimeoutMs: 7000        // strict cap so the UI never freezes
+  };
+
   var $ = function (id) { return document.getElementById(id); };
   var input = $("link"), playBtn = $("play"), video = $("player");
+  var playerBox = $("player-box"), downloadBtn = $("download");
   var loading = $("loading"), loadingText = $("loading-text");
   var errorBox = $("error"), errorText = $("error-text"), retryBtn = $("retry");
   var features = $("features");
 
+  var currentVideoUrl = null;
+  var midRollDone = false;
+  var midRollRunning = false;
+
   /* ---------- Telegram WebApp: register user ---------- */
+  var tg = window.Telegram && window.Telegram.WebApp;
   try {
-    var tg = window.Telegram && window.Telegram.WebApp;
     if (tg) {
       tg.ready();
       tg.expand();
@@ -52,41 +75,47 @@
     features.hidden = false;
   }
 
-  /* ---------- Tier 1: Adsgram rewarded (test blockId "8") ---------- */
+  /* ---------- Ad provider: Adsgram rewarded -> Promise<boolean> ---------- */
   function showAdsgram() {
-    return new Promise(function (resolve, reject) {
-      if (!window.Adsgram) return reject(new Error("Adsgram SDK not loaded"));
+    return new Promise(function (resolve) {
+      if (!window.Adsgram) return resolve(false);
       try {
-        window.Adsgram.init({ blockId: "56812" }).show()
-          .then(function (result) { resolve(result); })
-          .catch(function (err) { reject(err || new Error("Adsgram no fill")); });
-      } catch (err) { reject(err); }
+        window.Adsgram.init({ blockId: CONFIG.adsgramBlockId }).show()
+          .then(function () { resolve(true); })
+          .catch(function (err) {
+            console.log("[Adsgram] skipped / no fill:", err);
+            resolve(false);
+          });
+      } catch (err) {
+        console.log("[Adsgram] exception:", err);
+        resolve(false);
+      }
     });
   }
 
-  /* ---------- Tier 2: Tads fullscreen (debug: true, hard 7s timeout) ---------- */
+  /* ---------- Ad provider: Tads fullscreen -> Promise<boolean> (hard timeout) ---------- */
   function showTads() {
     return new Promise(function (resolve) {
       var done = false;
+      var timer = setTimeout(function () {
+        console.log("[Tads] timeout - moving on");
+        finish(false);
+      }, CONFIG.tadsTimeoutMs);
+
       function finish(v) {
         if (done) return;
         done = true;
         clearTimeout(timer);
         resolve(v);
       }
-      // Strict 7s cap: never let the UI freeze on a stuck SDK
-      var timer = setTimeout(function () {
-        console.log("[Tads] 7s timeout - continuing");
-        finish(false);
-      }, 7000);
 
       try {
         if (!window.tads || typeof window.tads.init !== "function") return finish(false);
         var ad = window.tads.init({
-          widgetId: "11137",
+          widgetId: CONFIG.tadsWidgetId,
           type: "fullscreen",
-          debug: true,
-          onShow: function () { /* ad visible; wait for close, 7s timer is cleared on close */ clearTimeout(timer); },
+          debug: CONFIG.tadsDebug,
+          onShow: function () { clearTimeout(timer); },   // ad is visible: wait for close
           onShowReward: function () { finish(true); },
           onClose: function () { finish(true); },
           onAdsNotFound: function () { finish(false); },
@@ -105,16 +134,19 @@
     });
   }
 
-  /* ---------- Waterfall: Tier 1 -> Tier 2 -> always resolves ---------- */
+  var PROVIDERS = { tads: showTads, adsgram: showAdsgram };
+
+  /* ---------- Waterfall: runs CONFIG.adOrder, stops at first ad that shows ---------- */
   async function runAdWaterfall() {
-    try {
-      await showAdsgram();
-      return "adsgram";
-    } catch (err) {
-      console.log("[Adsgram] failed, falling back to Tads:", err);
+    for (var i = 0; i < CONFIG.adOrder.length; i++) {
+      var name = CONFIG.adOrder[i];
+      var fn = PROVIDERS[name];
+      if (!fn) continue;
+      console.log("[Waterfall] trying", name);
+      var shown = await fn();
+      if (shown) return name;
     }
-    var shown = await showTads();
-    return shown ? "tads" : "none";
+    return "none"; // nothing filled: caller continues anyway
   }
 
   /* ---------- Extract helper (tolerant to response shape) ---------- */
@@ -131,6 +163,58 @@
     return null;
   }
 
+  function exitFullscreen() {
+    try {
+      if (document.fullscreenElement && document.exitFullscreen) document.exitFullscreen();
+      else if (document.webkitFullscreenElement && document.webkitExitFullscreen) document.webkitExitFullscreen();
+      else if (video.webkitDisplayingFullscreen && video.webkitExitFullscreen) video.webkitExitFullscreen();
+    } catch (e) {}
+  }
+
+  /* ---------- Mid-roll: after N seconds of playback, pause -> ad -> resume ---------- */
+  async function runMidRoll() {
+    if (midRollDone || midRollRunning) return;
+    midRollRunning = true;
+    midRollDone = true;               // only once per video
+
+    video.pause();
+    exitFullscreen();
+    playerBox.hidden = true;          // hide video while the ad runs
+    setBusy(true, "Loading ad…");
+
+    await runAdWaterfall();
+
+    setBusy(false);
+    playerBox.hidden = false;         // then show the video again
+    try { await video.play(); } catch (e) { /* user taps play */ }
+    midRollRunning = false;
+  }
+
+  video.addEventListener("timeupdate", function () {
+    if (!midRollDone && !midRollRunning && video.currentTime >= CONFIG.midRollAfterSeconds) {
+      runMidRoll();
+    }
+  });
+
+  /* ---------- Download button ---------- */
+  downloadBtn.addEventListener("click", function () {
+    if (!currentVideoUrl) return;
+    try {
+      if (tg && typeof tg.openLink === "function") {
+        tg.openLink(currentVideoUrl);   // opens in the phone's browser, which handles downloads
+        return;
+      }
+    } catch (e) {}
+    var a = document.createElement("a");
+    a.href = currentVideoUrl;
+    a.download = "";
+    a.target = "_blank";
+    a.rel = "noopener";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  });
+
   /* ---------- Play flow ---------- */
   async function onPlay() {
     var link = input.value.trim();
@@ -138,10 +222,13 @@
 
     errorBox.hidden = true;
     features.hidden = true;
-    video.hidden = true;
+    playerBox.hidden = true;
     video.pause();
     video.removeAttribute("src");
     video.load();
+    currentVideoUrl = null;
+    midRollDone = false;
+    midRollRunning = false;
 
     setBusy(true, "Loading ad…");
     await runAdWaterfall(); // resolves whether played or skipped
@@ -154,9 +241,10 @@
       if (!videoUrl) {
         return showError((data && data.error) || "Could not get a video link. Try again.");
       }
+      currentVideoUrl = videoUrl;
       setBusy(false);
       video.src = videoUrl;
-      video.hidden = false;
+      playerBox.hidden = false;
       try { await video.play(); } catch (e) { /* autoplay blocked: user taps play */ }
     } catch (err) {
       console.error("[extract]", err);
